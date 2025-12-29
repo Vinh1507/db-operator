@@ -18,9 +18,21 @@ spec:
         enabled: true
         class: csi-sc-viettelplugin-hdd
         size: 10Gi
+      
+      config:
+        kv:
+          archive_mode: 'on'
+          archive_timeout: 6min
+          dynamic_shared_memory_type: posix
+          log_destination: csvlog
+          log_directory: /controller/log
+
       credentialsSecretNames:
         - app-user-secret-cnpg
         - readonly-user-secret-cnpg
+
+      monitoring:
+        enabled: true
 
 ---
 
