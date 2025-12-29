@@ -1,0 +1,13 @@
+apiVersion: ops.example.com/v1alpha1
+kind: OpsRequest
+metadata:
+  name: switchover-postgres
+  namespace: default
+spec:
+  clusterRef:
+    name: demo-cluster-4
+  engineRef:
+    name: demo-pg-4
+  type: Switchover
+  params:
+    targetPrimary: "demo-pg-4-2"
