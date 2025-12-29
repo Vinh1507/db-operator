@@ -51,6 +51,33 @@ spec:
               engines:
                 items:
                   properties:
+                    backup:
+                      properties:
+                        backupStorageName:
+                          type: string
+                        enabled:
+                          type: boolean
+                        schedules:
+                          items:
+                            properties:
+                              enabled:
+                                type: boolean
+                              name:
+                                type: string
+                              retentionCopies:
+                                format: int32
+                                type: integer
+                              schedule:
+                                type: string
+                            required:
+                            - enabled
+                            - name
+                            - schedule
+                            type: object
+                          type: array
+                      required:
+                      - enabled
+                      type: object
                     category:
                       type: string
                     config:
@@ -68,6 +95,18 @@ spec:
                       type: array
                     engineType:
                       type: string
+                    expose:
+                      properties:
+                        enabled:
+                          type: boolean
+                        port:
+                          format: int32
+                          type: integer
+                        type:
+                          type: string
+                      required:
+                      - enabled
+                      type: object
                     monitoring:
                       properties:
                         enabled:

@@ -32,6 +32,32 @@ rules:
   - update
   - watch
 - apiGroups:
+  - ops.example.com
+  resources:
+  - opsrequests
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - ops.example.com
+  resources:
+  - opsrequests/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - ops.example.com
+  resources:
+  - opsrequests/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
   - postgresql.cnpg.io
   resources:
   - clusters/status

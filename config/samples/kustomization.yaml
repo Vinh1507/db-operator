@@ -1,4 +1,5 @@
 ## Append samples of your project ##
 resources:
 - everest_v1alpha1_cluster.yaml
+- ops.example.com_v1alpha1_opsrequest.yaml
 # +kubebuilder:scaffold:manifestskustomizesamples
