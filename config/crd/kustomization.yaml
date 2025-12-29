@@ -3,6 +3,7 @@
 # It should be run by config/default
 resources:
 - bases/everest.example.com_clusters.yaml
+- bases/ops.example.com.example.com_opsrequests.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patches:

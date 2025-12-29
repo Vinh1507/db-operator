@@ -62,6 +62,34 @@ type EngineMonitoring struct {
 	ExporterPort         int32  `json:"exporterPort,omitempty"`
 }
 
+type EngineBackupSpec struct {
+	Enabled           bool                 `json:"enabled"`
+	BackupStorageName string               `json:"backupStorageName,omitempty"`
+	Schedules         []BackupScheduleSpec `json:"schedules,omitempty"`
+}
+
+type BackupScheduleSpec struct {
+	Name            string `json:"name"`
+	Schedule        string `json:"schedule"` // cron
+	Enabled         bool   `json:"enabled"`
+	RetentionCopies int32  `json:"retentionCopies,omitempty"`
+}
+
+type EngineExposeSpec struct {
+	Enabled bool       `json:"enabled"`
+	Type    ExposeType `json:"type,omitempty"`
+	Port    int32      `json:"port,omitempty"`
+}
+
+type ExposeType string
+
+const (
+	ExposeTypeHeadless     ExposeType = "Headless"
+	ExposeTypeClusterIP    ExposeType = "ClusterIP"
+	ExposeTypeNodePort     ExposeType = "NodePort"
+	ExposeTypeLoadBalancer ExposeType = "LoadBalancer"
+)
+
 type EngineSpec struct {
 	Name       string         `json:"name"`
 	Category   EngineCategory `json:"category"`
@@ -77,6 +105,9 @@ type EngineSpec struct {
 
 	CredentialsSecretNames []string         `json:"credentialsSecretNames,omitempty"`
 	Monitoring             EngineMonitoring `json:"monitoring,omitempty"`
+
+	Backup EngineBackupSpec `json:"backup,omitempty"`
+	Expose EngineExposeSpec `json:"expose,omitempty"`
 }
 
 type ConfigSpec struct {

@@ -35,9 +35,12 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
+	cnpgv1 "github.com/cloudnative-pg/cloudnative-pg/api/v1"
+
+	opsv1alpha1 "github.com/Vinh1507/db-operator/api/ops/v1alpha1"
 	everestv1alpha1 "github.com/Vinh1507/db-operator/api/v1alpha1"
 	"github.com/Vinh1507/db-operator/internal/controller"
-	cnpgv1 "github.com/cloudnative-pg/cloudnative-pg/api/v1"
+	opsexamplecomcontroller "github.com/Vinh1507/db-operator/internal/controller/ops.example.com"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -52,6 +55,7 @@ func init() {
 	utilruntime.Must(everestv1alpha1.AddToScheme(scheme))
 	utilruntime.Must(cnpgv1.AddToScheme(scheme))
 
+	utilruntime.Must(opsv1alpha1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }
 
@@ -186,6 +190,13 @@ func main() {
 		Scheme: mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Cluster")
+		os.Exit(1)
+	}
+	if err := (&opsexamplecomcontroller.OpsRequestReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "OpsRequest")
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder
