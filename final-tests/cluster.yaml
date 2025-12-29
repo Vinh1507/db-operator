@@ -1,0 +1,46 @@
+apiVersion: everest.example.com/v1alpha1
+kind: Cluster
+metadata:
+  name: demo-cluster-4
+  namespace: default
+spec:
+  engines:
+    - name: demo-pg-4
+      engineType: cnpg
+
+      category: database
+      priority: 1
+
+      replicas: 2
+      version: "16.1"
+
+      storage:
+        enabled: true
+        class: csi-sc-viettelplugin-hdd
+        size: 10Gi
+      credentialsSecretNames:
+        - app-user-secret-cnpg
+        - readonly-user-secret-cnpg
+
+---
+
+apiVersion: v1
+kind: Secret
+metadata:
+  name: app-user-secret-cnpg
+  namespace: default
+type: Opaque
+stringData:
+  username: app_user
+  password: app_password_123
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: readonly-user-secret-cnpg
+  namespace: default
+type: Opaque
+stringData:
+  username: readonly_user
+  password: readonly_password_456
