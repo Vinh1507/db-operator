@@ -84,6 +84,7 @@ func (p *Provider) Status(
 	cnpg := p.CNPGCluster
 
 	// Map CNPG phase to our status
+	// p.Cluster.Spec
 	status.Name = p.CNPGCluster.Name
 	status.Type = "cnpg"
 	status.Phase = mapCNPGPhase(cnpg.Status.Phase)
@@ -160,14 +161,14 @@ func (p *Provider) Cleanup(ctx context.Context) (bool, error) {
 	), nil
 }
 
-// DBObject returns the underlying CNPG cluster object
-func (p *Provider) DBObject() client.Object {
+// DBObjects returns the underlying CNPG cluster object
+func (p *Provider) DBObjects() []client.Object {
 	p.CNPGCluster.SetGroupVersionKind(schema.GroupVersionKind{
 		Group:   cnpgv1.SchemeGroupVersion.Group,
 		Version: cnpgv1.SchemeGroupVersion.Version,
 		Kind:    "Cluster",
 	})
-	return p.CNPGCluster
+	return []client.Object{p.CNPGCluster}
 }
 
 // SetName sets the name of CNPG cluster

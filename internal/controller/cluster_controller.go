@@ -88,7 +88,7 @@ func (r *ClusterReconciler) reconcileEngine(
 		Apply(ctx context.Context) cnpg.Applier
 		RunPreReconcileHook(ctx context.Context) (bool, time.Duration, string, error)
 		Status(ctx context.Context) (everestv1alpha1.EngineStatus, error)
-		DBObject() client.Object
+		DBObjects() []client.Object
 		SetName(string)
 		SetNamespace(string)
 	}
@@ -124,46 +124,25 @@ func (r *ClusterReconciler) reconcileEngine(
 	provider.SetName(engine.Name)
 	provider.SetNamespace(cluster.GetNamespace())
 
-	// Create or update underlying CR
-	dbObject := provider.DBObject()
-	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, dbObject, func() error {
-		// Set owner reference
-		if err := controllerutil.SetControllerReference(cluster, dbObject, r.Scheme); err != nil {
-			return fmt.Errorf("failed to set controller reference: %w", err)
-		}
-
-		// Get applier
-		applier := provider.Apply(ctx)
-
-		// Apply configurations in order
-		steps := []struct {
-			name string
-			fn   func() error
-		}{
-			{"ResetDefaults", applier.ResetDefaults},
-			{"Metadata", applier.Metadata},
-			{"Paused", func() error { return applier.Paused(cluster.Spec.Paused) }},
-			{"Engine", applier.Engine},
-			{"Resources", applier.Resources},
-			{"Storage", applier.Storage},
-			{"ConfigBackup", applier.ConfigBackup},
-			{"Monitoring", applier.Monitoring},
-			{"Expose", applier.Expose},
-			{"CreateUsers", applier.CreateUsers},
-			{"DataSource", applier.DataSource},
-			{"DataImport", applier.DataImport},
-			{"PodSchedulingPolicy", applier.PodSchedulingPolicy},
-		}
-
-		for _, step := range steps {
-			if err := step.fn(); err != nil {
-				return fmt.Errorf("failed to apply %s: %w", step.name, err)
+	// Create or update underlying CRs
+	dbObjects := provider.DBObjects()
+	for _, dbObject := range dbObjects {
+		_, err = controllerutil.CreateOrUpdate(ctx, r.Client, dbObject, func() error {
+			// Set owner reference
+			if err := controllerutil.SetControllerReference(cluster, dbObject, r.Scheme); err != nil {
+				return fmt.Errorf("failed to set controller reference: %w", err)
 			}
-		}
 
-		return nil
-	})
+			// Get applier
+			applier := provider.Apply(ctx)
 
+			if err := applier.Convert(dbObject); err != nil {
+				return fmt.Errorf("failed to convert object: %w", err)
+			}
+
+			return nil
+		})
+	}
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to create or update engine: %w", err)
 	}
@@ -222,6 +201,40 @@ func (r *ClusterReconciler) updateClusterStatus(
 		cluster.Status.Phase = "Initializing"
 	}
 
+	// ensure endpoints struct
+	if cluster.Status.Endpoints == nil {
+		cluster.Status.Endpoints = &everestv1alpha1.EngineEndpoints{}
+	}
+
+	// ensure slices
+	if cluster.Status.Endpoints.Internal == nil {
+		cluster.Status.Endpoints.Internal = []string{}
+	}
+	if cluster.Status.Endpoints.External == nil {
+		cluster.Status.Endpoints.External = []string{}
+	}
+
+	// helper: append if missing
+	appendIfMissing := func(list []string, v string) []string {
+		for _, e := range list {
+			if e == v {
+				return list
+			}
+		}
+		return append(list, v)
+	}
+
+	// internal endpoint
+	cluster.Status.Endpoints.Internal = appendIfMissing(
+		cluster.Status.Endpoints.Internal,
+		"abc.cnpg.svc.cluster.local:3306",
+	)
+
+	// external endpoint (ví dụ)
+	cluster.Status.Endpoints.External = appendIfMissing(
+		cluster.Status.Endpoints.External,
+		"abc.example.com:3306",
+	)
 	// Update status with retry
 	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		// Get latest version

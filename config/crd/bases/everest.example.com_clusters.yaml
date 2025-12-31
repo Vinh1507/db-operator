@@ -55,11 +55,31 @@ spec:
                       properties:
                         backupStorageName:
                           type: string
+                        backupStorages:
+                          items:
+                            description: BackupStorage references and configures a
+                              backup storage location
+                            properties:
+                              name:
+                                description: Name of the backup storage (reference
+                                  to BackupStorage CR or logical name)
+                                type: string
+                              secretRef:
+                                description: secret ref
+                                type: string
+                            required:
+                            - name
+                            type: object
+                          type: array
                         enabled:
                           type: boolean
                         schedules:
                           items:
                             properties:
+                              backupStorageName:
+                                type: string
+                              backupType:
+                                type: string
                               enabled:
                                 type: boolean
                               name:
@@ -225,6 +245,25 @@ spec:
                   - type
                   type: object
                 type: array
+              endpoints:
+                description: Connection endpoints for client
+                properties:
+                  admin:
+                    description: Admin / management endpoints
+                    items:
+                      type: string
+                    type: array
+                  external:
+                    description: External endpoints (LB / public)
+                    items:
+                      type: string
+                    type: array
+                  internal:
+                    description: Internal service endpoints (in-cluster)
+                    items:
+                      type: string
+                    type: array
+                type: object
               engines:
                 description: Engines contains status for each engine in the cluster
                 items:

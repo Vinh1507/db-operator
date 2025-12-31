@@ -22,6 +22,9 @@ resources:
 # default, aiding admins in cluster management. Those roles are
 # not used by the db-operator itself. You can comment the following lines
 # if you do not want those helpers be installed with your Project.
+- dbaas_clusterbackup_admin_role.yaml
+- dbaas_clusterbackup_editor_role.yaml
+- dbaas_clusterbackup_viewer_role.yaml
 - ops.example.com_opsrequest_admin_role.yaml
 - ops.example.com_opsrequest_editor_role.yaml
 - ops.example.com_opsrequest_viewer_role.yaml

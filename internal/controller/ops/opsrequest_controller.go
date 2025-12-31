@@ -143,7 +143,7 @@ func (r *OpsRequestReconciler) executeOperation(
 		Apply(ctx context.Context) cnpg.Applier
 		RunPreReconcileHook(ctx context.Context) (bool, time.Duration, string, error)
 		Status(ctx context.Context) (everestv1alpha1.EngineStatus, error)
-		DBObject() client.Object
+		DBObjects() []client.Object
 		SetName(string)
 		SetNamespace(string)
 	}

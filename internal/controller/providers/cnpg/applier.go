@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	opsv1alpha1 "github.com/Vinh1507/db-operator/api/ops/v1alpha1"
@@ -23,49 +24,36 @@ import (
 
 // Applier applies configuration to CNPG cluster
 type Applier interface {
-	ResetDefaults() error
-	Metadata() error
-	Paused(paused bool) error
-	Engine() error
-	Resources() error
-	Storage() error
-	ConfigBackup() error
-	Monitoring() error
-	DataSource() error
-	Expose() error
-	Network() error
-	CreateUsers() error
-	DataImport() error
-	PodSchedulingPolicy() error
+	Convert(dbObject client.Object) error
+	// ResetDefaults() error
+	// Metadata() error
+	// Paused(paused bool) error
+	// Engine() error
+	// Resources() error
+	// Storage() error
+	// ConfigBackup() error
+	// Monitoring() error
+	// DataSource() error
+	// Expose() error
+	// Network() error
+	// CreateUsers() error
+	// DataImport() error
+	// PodSchedulingPolicy() error
 
 	// Action methods for OpsRequest
 	ValidateAction(action opsv1alpha1.ActionType, params map[string]string) error
-
-	// Lifecycle actions
 	Start(ctx context.Context, params map[string]string) (providers.ActionResult, error)
 	Stop(ctx context.Context, params map[string]string) (providers.ActionResult, error)
 	Restart(ctx context.Context, params map[string]string) (providers.ActionResult, error)
-
-	// Scaling actions
 	HorizontalScale(ctx context.Context, params map[string]string) (providers.ActionResult, error)
 	VerticalScale(ctx context.Context, params map[string]string) (providers.ActionResult, error)
 	VolumeExpansion(ctx context.Context, params map[string]string) (providers.ActionResult, error)
-
-	// Configuration actions
 	Reconfigure(ctx context.Context, params map[string]string) (providers.ActionResult, error)
 	Upgrade(ctx context.Context, params map[string]string) (providers.ActionResult, error)
-
-	// Data actions
 	Backup(ctx context.Context, params map[string]string) (providers.ActionResult, error)
 	Restore(ctx context.Context, params map[string]string) (providers.ActionResult, error)
-
-	// Network actions
 	ExposeService(ctx context.Context, params map[string]string) (providers.ActionResult, error)
-
-	// Database-specific actions
 	Switchover(ctx context.Context, params map[string]string) (providers.ActionResult, error)
-
-	// Custom actions
 	Custom(ctx context.Context, params map[string]string) (providers.ActionResult, error)
 }
 
@@ -74,7 +62,31 @@ type applier struct {
 	ctx context.Context
 }
 
-// defaultSpec returns default CNPG cluster spec
+func (a *applier) Convert(dbObject client.Object) error {
+	switch obj := dbObject.(type) {
+	case *cnpgv1.Cluster:
+		a.ResetDefaults()
+		a.Metadata()
+		a.Paused()
+		a.Engine()
+		a.Resources()
+		a.Storage()
+		a.ConfigBackup()
+		a.Monitoring()
+		a.Expose()
+		a.CreateUsers()
+		a.DataSource()
+		a.DataImport()
+		a.PodSchedulingPolicy()
+		a.GetOpsResult()
+	// case *AnotherCRDType:
+	default:
+		return fmt.Errorf("unsupported object type: %T", obj)
+	}
+	return nil
+}
+
+// defaultSpec returns default CNPG cluster spec with S3 backup enabled
 func defaultSpec() cnpgv1.ClusterSpec {
 	return cnpgv1.ClusterSpec{
 		Instances: 1,
@@ -115,7 +127,8 @@ func (a *applier) Metadata() error {
 }
 
 // Paused sets pause state (scales to 0 instances)
-func (a *applier) Paused(paused bool) error {
+func (a *applier) Paused() error {
+	paused := a.Cluster.Spec.Paused
 	if paused {
 		a.CNPGCluster.Spec.Instances = 0
 	}
@@ -210,29 +223,30 @@ func (a *applier) Storage() error {
 
 // ConfigBackup configures CNPG backup settings
 func (a *applier) ConfigBackup() error {
-	// backup := a.EngineSpec.Backup
+	backup := a.EngineSpec.Backup
 
-	// if !backup.Enabled {
-	// 	a.CNPGCluster.Spec.Backup = nil
-	// 	return nil
-	// }
+	if !backup.Enabled {
+		a.CNPGCluster.Spec.Backup = nil
+		return nil
+	}
 
-	// if backup.BackupStorageName == "" {
-	// 	return fmt.Errorf("backupStorageName must be set when backup is enabled")
-	// }
+	if backup.BackupStorageName == "" {
+		return fmt.Errorf("backupStorageName must be set when backup is enabled")
+	}
 
-	// // Fetch backup storage secret
-	// secret := &corev1.Secret{}
-	// if err := a.Client.Get(
-	// 	a.ctx,
-	// 	types.NamespacedName{
-	// 		Name:      backup.BackupStorageName,
-	// 		Namespace: a.Cluster.Namespace,
-	// 	},
-	// 	secret,
-	// ); err != nil {
-	// 	return fmt.Errorf("failed to get backup storage secret: %w", err)
-	// }
+	backupStorage := backup.BackupStorages[0]
+	// Fetch backup storage secret
+	secret := &corev1.Secret{}
+	if err := a.Client.Get(
+		a.ctx,
+		types.NamespacedName{
+			Name:      backupStorage.SecretRef,
+			Namespace: a.Cluster.Namespace,
+		},
+		secret,
+	); err != nil {
+		return fmt.Errorf("failed to get backup storage secret: %w", err)
+	}
 
 	// // Required keys
 	// requiredKeys := []string{"accessKeyId", "secretAccessKey", "endpoint", "bucket"}
@@ -242,33 +256,35 @@ func (a *applier) ConfigBackup() error {
 	// 	}
 	// }
 
-	// bucket := string(secret.Data["bucket"])
-	// endpoint := string(secret.Data["endpoint"])
+	bucket := string(secret.Data["bucket"])
+	endpoint := string(secret.Data["endpoint"])
 
-	// a.CNPGCluster.Spec.Backup = &cnpgv1.BackupConfiguration{
-	// 	BarmanObjectStore: &cnpgv1.BarmanObjectStoreConfiguration{
-	// 		DestinationPath: fmt.Sprintf(
-	// 			"s3://%s/%s",
-	// 			bucket,
-	// 			a.EngineSpec.Name,
-	// 		),
-	// 		EndpointURL: endpoint,
-	// 		BarmanCredentials: &cnpgv1.BarmanCredentials{
-	// 			AccessKeyIDReference: &cnpgv1.SecretKeySelector{
-	// 				LocalObjectReference: cnpgv1.LocalObjectReference{
-	// 					Name: secret.Name,
-	// 				},
-	// 				Key: "accessKeyId",
-	// 			},
-	// 			SecretAccessKeyReference: &cnpgv1.SecretKeySelector{
-	// 				LocalObjectReference: cnpgv1.LocalObjectReference{
-	// 					Name: secret.Name,
-	// 				},
-	// 				Key: "secretAccessKey",
-	// 			},
-	// 		},
-	// 	},
-	// }
+	a.CNPGCluster.Spec.Backup = &cnpgv1.BackupConfiguration{
+		BarmanObjectStore: &cnpgv1.BarmanObjectStoreConfiguration{
+			DestinationPath: fmt.Sprintf(
+				"s3://%s/%s",
+				bucket,
+				a.EngineSpec.Name,
+			),
+			EndpointURL: endpoint,
+			BarmanCredentials: cnpgv1.BarmanCredentials{
+				AWS: &cnpgv1.S3Credentials{
+					AccessKeyIDReference: &cnpgv1.SecretKeySelector{
+						LocalObjectReference: cnpgv1.LocalObjectReference{
+							Name: secret.Name,
+						},
+						Key: "accessKeyId",
+					},
+					SecretAccessKeyReference: &cnpgv1.SecretKeySelector{
+						LocalObjectReference: cnpgv1.LocalObjectReference{
+							Name: secret.Name,
+						},
+						Key: "secretAccessKey",
+					},
+				},
+			},
+		},
+	}
 
 	return nil
 }
@@ -451,6 +467,136 @@ func (a *applier) DataImport() error {
 func (a *applier) PodSchedulingPolicy() error {
 	// Apply pod affinity, tolerations, etc.
 	return nil
+}
+func (a *applier) GetOpsResult() error {
+	// Collect pod info as flat logs
+	logsMap, err := a.collectPodInfo()
+	if err != nil {
+		return fmt.Errorf("failed to collect pod information: %w", err)
+	}
+
+	opsResult := &opsv1alpha1.OpsResult{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      fmt.Sprintf("%s-ops-logs", a.Cluster.Name),
+			Namespace: a.Cluster.Namespace,
+		},
+	}
+
+	_, err = controllerutil.CreateOrUpdate(a.ctx, a.Client, opsResult, func() error {
+		// Owner reference
+		if err := controllerutil.SetControllerReference(
+			a.Cluster, opsResult, a.Scheme,
+		); err != nil {
+			return err
+		}
+
+		// Spec
+		opsResult.Spec = opsv1alpha1.OpsResultSpec{
+			ClusterRef: opsv1alpha1.ObjectReference{
+				Name:       a.Cluster.Name,
+				Namespace:  a.Cluster.Namespace,
+				Kind:       a.Cluster.Kind,
+				APIVersion: a.Cluster.APIVersion,
+			},
+			EngineRef: opsv1alpha1.ObjectReference{
+				Name:       a.CNPGCluster.Name,
+				Namespace:  a.CNPGCluster.Namespace,
+				Kind:       "Cluster",
+				APIVersion: "postgresql.cnpg.io/v1",
+			},
+			Logs: logsMap,
+		}
+
+		// Status
+		opsResult.Status.Phase = "Updated"
+		opsResult.Status.LastUpdateTime = metav1.Now()
+
+		return nil
+	})
+
+	return err
+}
+
+func (a *applier) collectPodInfo() (map[string]string, error) {
+	result := make(map[string]string)
+
+	// timestamp
+	now := metav1.Now()
+	result["timestamp"] = now.Format(time.RFC3339)
+
+	// init log
+	var logs []string
+	logs = append(logs, "collectPodInfo started")
+
+	podList := &corev1.PodList{}
+	labelSelector := client.MatchingLabels{
+		"cnpg.io/cluster": a.CNPGCluster.Name,
+	}
+
+	if err := a.Client.List(
+		a.ctx,
+		podList,
+		client.InNamespace(a.CNPGCluster.Namespace),
+		labelSelector,
+	); err != nil {
+		logs = append(logs, fmt.Sprintf("failed to list pods: %v", err))
+		result["log"] = strings.Join(logs, "\n")
+		return result, err
+	}
+
+	for _, pod := range podList.Items {
+		podPrefix := fmt.Sprintf("pods/%s", pod.Name)
+
+		logs = append(logs, fmt.Sprintf("processing pod %s", pod.Name))
+
+		result[podPrefix+"/phase"] = string(pod.Status.Phase)
+		result[podPrefix+"/node"] = pod.Spec.NodeName
+		result[podPrefix+"/podIP"] = pod.Status.PodIP
+		result[podPrefix+"/hostIP"] = pod.Status.HostIP
+
+		for _, cond := range pod.Status.Conditions {
+			key := fmt.Sprintf("%s/condition/%s", podPrefix, cond.Type)
+			value := fmt.Sprintf(
+				"status=%s reason=%s message=%s",
+				cond.Status,
+				cond.Reason,
+				cond.Message,
+			)
+			result[key] = value
+		}
+
+		// Container statuses
+		for _, cs := range pod.Status.ContainerStatuses {
+			containerPrefix := fmt.Sprintf("%s/container/%s", podPrefix, cs.Name)
+
+			state := "Unknown"
+			message := ""
+
+			if cs.State.Running != nil {
+				state = "Running"
+			} else if cs.State.Waiting != nil {
+				state = "Waiting"
+				message = cs.State.Waiting.Message
+			} else if cs.State.Terminated != nil {
+				state = "Terminated"
+				message = cs.State.Terminated.Message
+			}
+
+			result[containerPrefix+"/state"] = state
+			result[containerPrefix+"/ready"] = strconv.FormatBool(cs.Ready)
+			result[containerPrefix+"/restartCount"] = strconv.Itoa(int(cs.RestartCount))
+			result[containerPrefix+"/image"] = cs.Image
+
+			if message != "" {
+				result[containerPrefix+"/message"] = message
+			}
+		}
+	}
+
+	logs = append(logs, "collectPodInfo finished")
+	result["log"] = strings.Join(logs, "\n")
+
+	return result, nil
 }
 
 /**
@@ -662,7 +808,9 @@ func (a *applier) validateHorizontalScale(params map[string]string) error {
 func (a *applier) HorizontalScale(ctx context.Context, params map[string]string) (providers.ActionResult, error) {
 	replicas, _ := strconv.ParseInt(params["replicas"], 10, 32)
 	targetReplicas := int32(replicas)
-
+	fmt.Println(">>>>>>> 4")
+	fmt.Println(">>>>>>> 5", a.EngineSpec.Name)
+	fmt.Println(">>>>>>> 6", targetReplicas)
 	currentReplicas := a.EngineSpec.Replicas
 
 	// Update cluster spec
@@ -678,35 +826,36 @@ func (a *applier) HorizontalScale(ctx context.Context, params map[string]string)
 	}
 
 	// // Refresh status
-	// if err := a.Client.Get(ctx, client.ObjectKeyFromObject(a.CNPGCluster), a.CNPGCluster); err != nil {
-	// 	return providers.ActionResult{}, err
-	// }
+	if err := a.Client.Get(ctx, client.ObjectKeyFromObject(a.CNPGCluster), a.CNPGCluster); err != nil {
+		return providers.ActionResult{}, err
+	}
 
-	// // Check if scaling completed
-	// if a.CNPGCluster.Status.ReadyInstances == int(targetReplicas) &&
-	// 	a.CNPGCluster.Status.Phase == cnpgv1.PhaseHealthy {
-	// 	return providers.ActionResult{
-	// 		Completed: true,
-	// 		Progress:  100,
-	// 		Message:   fmt.Sprintf("Scaled from %d to %d replicas successfully", currentReplicas, targetReplicas),
-	// 		Output: map[string]string{
-	// 			"previousReplicas": strconv.Itoa(int(currentReplicas)),
-	// 			"currentReplicas":  strconv.Itoa(int(targetReplicas)),
-	// 		},
-	// 	}, nil
-	// }
+	// Check if scaling completed
+	if a.CNPGCluster.Status.ReadyInstances == int(targetReplicas) &&
+		a.CNPGCluster.Status.Phase == cnpgv1.PhaseHealthy {
+		return providers.ActionResult{
+			Completed: true,
+			Progress:  100,
+			Message:   fmt.Sprintf("Scaled from %d to %d replicas successfully", currentReplicas, targetReplicas),
+			Output: map[string]string{
+				"previousReplicas": strconv.Itoa(int(currentReplicas)),
+				"currentReplicas":  strconv.Itoa(int(targetReplicas)),
+			},
+		}, nil
+	}
 
-	// progress := int32(20)
-	// if targetReplicas > 0 {
-	// 	progress = 20 + int32(float64(a.CNPGCluster.Status.ReadyInstances)/float64(targetReplicas)*70)
-	// }
+	progress := int32(20)
+	if targetReplicas > 0 {
+		progress = 20 + int32(float64(a.CNPGCluster.Status.ReadyInstances)/float64(targetReplicas)*70)
+	}
 
-	// return providers.ActionResult{
-	// 	Completed:    false,
-	// 	Progress:     progress,
-	// 	Message:      fmt.Sprintf("Scaling in progress: %d/%d replicas ready", a.CNPGCluster.Status.ReadyInstances, targetReplicas),
-	// 	RequeueAfter: 15 * time.Second,
-	// }, nil
+	return providers.ActionResult{
+		Completed:    false,
+		Progress:     progress,
+		Message:      fmt.Sprintf("Scaling in progress: %d/%d replicas ready", a.CNPGCluster.Status.ReadyInstances, targetReplicas),
+		RequeueAfter: 15 * time.Second,
+	}, nil
+	// return providers.ActionResult{}, nil
 }
 
 // ==================== Vertical Scaling ====================

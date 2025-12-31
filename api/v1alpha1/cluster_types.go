@@ -51,11 +51,6 @@ type ResourceSpec struct {
 	Memory string `json:"memory"`
 }
 
-type BackupSpec struct {
-	Enabled           bool   `json:"enabled"`
-	BackupStorageName string `json:"backupStorageName,omitempty"`
-}
-
 type EngineMonitoring struct {
 	Enabled              bool   `json:"enabled"`
 	MonitoringConfigName string `json:"monitoringConfigName,omitempty"`
@@ -66,13 +61,26 @@ type EngineBackupSpec struct {
 	Enabled           bool                 `json:"enabled"`
 	BackupStorageName string               `json:"backupStorageName,omitempty"`
 	Schedules         []BackupScheduleSpec `json:"schedules,omitempty"`
+	BackupStorages    []BackupStorage      `json:"backupStorages,omitempty"`
 }
 
+// BackupStorage references and configures a backup storage location
+type BackupStorage struct {
+	// Name of the backup storage (reference to BackupStorage CR or logical name)
+	// +kubebuilder:validation:Required
+	Name string `json:"name"`
+
+	// secret ref
+	// +optional
+	SecretRef string `json:"secretRef,omitempty"`
+}
 type BackupScheduleSpec struct {
-	Name            string `json:"name"`
-	Schedule        string `json:"schedule"` // cron
-	Enabled         bool   `json:"enabled"`
-	RetentionCopies int32  `json:"retentionCopies,omitempty"`
+	Name              string `json:"name"`
+	Schedule          string `json:"schedule"` // cron
+	Enabled           bool   `json:"enabled"`
+	RetentionCopies   int32  `json:"retentionCopies,omitempty"`
+	BackupType        string `json:"backupType,omitempty"`
+	BackupStorageName string `json:"backupStorageName,omitempty"`
 }
 
 type EngineExposeSpec struct {
@@ -119,6 +127,20 @@ type ConfigSpec struct {
 type ClusterSpec struct {
 	Engines []EngineSpec `json:"engines"`
 	Paused  bool         `json:"paused,omitempty"`
+}
+
+type EngineEndpoints struct {
+	// Internal service endpoints (in-cluster)
+	// +optional
+	Internal []string `json:"internal,omitempty"`
+
+	// External endpoints (LB / public)
+	// +optional
+	External []string `json:"external,omitempty"`
+
+	// Admin / management endpoints
+	// +optional
+	Admin []string `json:"admin,omitempty"`
 }
 
 // EngineStatus represents the status of a single engine
@@ -184,6 +206,10 @@ type ClusterStatus struct {
 	// +patchMergeKey=type
 	// +patchStrategy=merge
 	Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
+
+	// Connection endpoints for client
+	// +optional
+	Endpoints *EngineEndpoints `json:"endpoints,omitempty"`
 
 	// LastUpdateTime is the last time the status was updated
 	// +optional

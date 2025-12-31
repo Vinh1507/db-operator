@@ -1,11 +1,11 @@
 apiVersion: everest.example.com/v1alpha1
 kind: Cluster
 metadata:
-  name: demo-cluster-4
+  name: demo-cluster-5
   namespace: default
 spec:
   engines:
-    - name: demo-pg-4
+    - name: demo-pg-5
       engineType: cnpg
 
       category: database
@@ -41,8 +41,8 @@ spec:
           log_directory: /controller/log
 
       credentialsSecretNames:
-        - app-user-secret-cnpg
-        - readonly-user-secret-cnpg
+        - app-user-secret-cnpg-5
+        - readonly-user-secret-cnpg-5
 
       monitoring:
         enabled: true
@@ -52,7 +52,7 @@ spec:
 apiVersion: v1
 kind: Secret
 metadata:
-  name: app-user-secret-cnpg
+  name: app-user-secret-cnpg-5
   namespace: default
 type: Opaque
 stringData:
@@ -63,7 +63,7 @@ stringData:
 apiVersion: v1
 kind: Secret
 metadata:
-  name: readonly-user-secret-cnpg
+  name: readonly-user-secret-cnpg-5
   namespace: default
 type: Opaque
 stringData:

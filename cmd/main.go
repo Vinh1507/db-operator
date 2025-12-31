@@ -37,10 +37,12 @@ import (
 
 	cnpgv1 "github.com/cloudnative-pg/cloudnative-pg/api/v1"
 
+	dbaasv1alpha1 "github.com/Vinh1507/db-operator/api/dbaas/v1alpha1"
 	opsv1alpha1 "github.com/Vinh1507/db-operator/api/ops/v1alpha1"
 	everestv1alpha1 "github.com/Vinh1507/db-operator/api/v1alpha1"
 	"github.com/Vinh1507/db-operator/internal/controller"
-	opsexamplecomcontroller "github.com/Vinh1507/db-operator/internal/controller/ops.example.com"
+	dbaascontroller "github.com/Vinh1507/db-operator/internal/controller/dbaas"
+	opscontroller "github.com/Vinh1507/db-operator/internal/controller/ops"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -56,6 +58,7 @@ func init() {
 	utilruntime.Must(cnpgv1.AddToScheme(scheme))
 
 	utilruntime.Must(opsv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(dbaasv1alpha1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }
 
@@ -192,11 +195,18 @@ func main() {
 		setupLog.Error(err, "unable to create controller", "controller", "Cluster")
 		os.Exit(1)
 	}
-	if err := (&opsexamplecomcontroller.OpsRequestReconciler{
+	if err := (&opscontroller.OpsRequestReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "OpsRequest")
+		os.Exit(1)
+	}
+	if err := (&dbaascontroller.ClusterBackupReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "ClusterBackup")
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder
