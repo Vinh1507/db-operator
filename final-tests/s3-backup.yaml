@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: s3-credentials
+  namespace: default
+type: Opaque
+stringData:
+  endpoint: s3://BUCKET_NAME/path/to/folder
+  accessKeyId: abc
+  secretAccessKey: abc
+  bucket: my-bucket

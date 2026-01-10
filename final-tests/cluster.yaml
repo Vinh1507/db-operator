@@ -1,14 +1,14 @@
 apiVersion: everest.example.com/v1alpha1
 kind: Cluster
 metadata:
-  name: demo-cluster-4
+  name: demo-cluster-7
   namespace: default
 spec:
+  providerType: cnpg
   engines:
-    - name: demo-pg-4
-      engineType: cnpg
+    - name: demo-pg-7
 
-      category: database
+      type: postgresql
       priority: 1
 
       replicas: 2
@@ -18,6 +18,19 @@ spec:
         enabled: true
         class: csi-sc-viettelplugin-hdd
         size: 10Gi
+
+      backup:
+        enabled: true
+        backupStorageName: back-store-1
+        schedules: 
+          - name: daily
+            schedule: "0 0 0 * * *"
+            enabled: true
+            
+
+        backupStorages:
+          - name: back-store-1
+            secretRef: s3-credentials
       
       config:
         kv:
@@ -28,8 +41,8 @@ spec:
           log_directory: /controller/log
 
       credentialsSecretNames:
-        - app-user-secret-cnpg
-        - readonly-user-secret-cnpg
+        - app-user-secret-cnpg-7
+        - readonly-user-secret-cnpg-7
 
       monitoring:
         enabled: true
@@ -39,7 +52,7 @@ spec:
 apiVersion: v1
 kind: Secret
 metadata:
-  name: app-user-secret-cnpg
+  name: app-user-secret-cnpg-7
   namespace: default
 type: Opaque
 stringData:
@@ -50,7 +63,7 @@ stringData:
 apiVersion: v1
 kind: Secret
 metadata:
-  name: readonly-user-secret-cnpg
+  name: readonly-user-secret-cnpg-7
   namespace: default
 type: Opaque
 stringData:

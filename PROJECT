@@ -28,4 +28,13 @@ resources:
   kind: OpsRequest
   path: github.com/Vinh1507/db-operator/api/ops/v1alpha1
   version: v1alpha1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: example.com
+  group: dbaas
+  kind: ClusterBackup
+  path: github.com/Vinh1507/db-operator/api/dbaas/v1alpha1
+  version: v1alpha1
 version: "3"

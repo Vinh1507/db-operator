@@ -4,16 +4,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-type EngineCategory string
-type EngineType string
+type ProviderType string
 
 const (
-	CategoryDatabase EngineCategory = "database"
-	CategoryProxy    EngineCategory = "proxy"
-
-	EnginePXC      EngineType = "pxc"
-	EngineCNPG     EngineType = "cnpg"
-	EngineProxySQL EngineType = "proxysql"
+	ProviderPXC  ProviderType = "pxc"
+	ProviderCNPG ProviderType = "cnpg"
 )
 
 // ClusterPhase represents the phase of the cluster
@@ -51,11 +46,6 @@ type ResourceSpec struct {
 	Memory string `json:"memory"`
 }
 
-type BackupSpec struct {
-	Enabled           bool   `json:"enabled"`
-	BackupStorageName string `json:"backupStorageName,omitempty"`
-}
-
 type EngineMonitoring struct {
 	Enabled              bool   `json:"enabled"`
 	MonitoringConfigName string `json:"monitoringConfigName,omitempty"`
@@ -66,13 +56,26 @@ type EngineBackupSpec struct {
 	Enabled           bool                 `json:"enabled"`
 	BackupStorageName string               `json:"backupStorageName,omitempty"`
 	Schedules         []BackupScheduleSpec `json:"schedules,omitempty"`
+	BackupStorages    []BackupStorage      `json:"backupStorages,omitempty"`
 }
 
+// BackupStorage references and configures a backup storage location
+type BackupStorage struct {
+	// Name of the backup storage (reference to BackupStorage CR or logical name)
+	// +kubebuilder:validation:Required
+	Name string `json:"name"`
+
+	// secret ref
+	// +optional
+	SecretRef string `json:"secretRef,omitempty"`
+}
 type BackupScheduleSpec struct {
-	Name            string `json:"name"`
-	Schedule        string `json:"schedule"` // cron
-	Enabled         bool   `json:"enabled"`
-	RetentionCopies int32  `json:"retentionCopies,omitempty"`
+	Name              string `json:"name"`
+	Schedule          string `json:"schedule"` // cron
+	Enabled           bool   `json:"enabled"`
+	RetentionCopies   int32  `json:"retentionCopies,omitempty"`
+	BackupType        string `json:"backupType,omitempty"`
+	BackupStorageName string `json:"backupStorageName,omitempty"`
 }
 
 type EngineExposeSpec struct {
@@ -91,12 +94,11 @@ const (
 )
 
 type EngineSpec struct {
-	Name       string         `json:"name"`
-	Category   EngineCategory `json:"category"`
-	EngineType EngineType     `json:"engineType"`
-	Version    string         `json:"version"`
-	Replicas   int32          `json:"replicas"`
-	Priority   int32          `json:"priority"`
+	Name     string `json:"name"`
+	Type     string `json:"type"`
+	Version  string `json:"version"`
+	Replicas int32  `json:"replicas"`
+	Priority int32  `json:"priority"`
 
 	Storage   StorageSpec  `json:"storage,omitempty"`
 	Resources ResourceSpec `json:"resources,omitempty"`
@@ -117,8 +119,31 @@ type ConfigSpec struct {
 
 // ClusterSpec defines the desired state
 type ClusterSpec struct {
-	Engines []EngineSpec `json:"engines"`
-	Paused  bool         `json:"paused,omitempty"`
+	Engines      []EngineSpec `json:"engines"`
+	ProviderType ProviderType `json:"providerType"`
+	Paused       bool         `json:"paused,omitempty"`
+}
+
+type Endpoint struct {
+	// Logical name of endpoint (e.g. primary, replica, read, write)
+	Name string `json:"name"`
+
+	// Endpoint address (host:port or URL)
+	Endpoint string `json:"endpoint"`
+}
+
+type CredentialSecretRef struct {
+	// Name hiển thị / logical name
+	// +kubebuilder:validation:Required
+	Name string `json:"name"`
+
+	// RefName là tên Secret thực tế trong k8s
+	// +kubebuilder:validation:Required
+	RefName string `json:"refName"`
+
+	// RefNamespace là namespace của Secret
+	// +optional
+	RefNamespace string `json:"refNamespace,omitempty"`
 }
 
 // EngineStatus represents the status of a single engine
@@ -141,18 +166,20 @@ type EngineStatus struct {
 	// Current version running
 	Version string `json:"version,omitempty"`
 
-	// Hostname or endpoint for connection
-	Hostname string `json:"hostname,omitempty"`
-
-	// Port for connection
-	Port int32 `json:"port,omitempty"`
-
 	// Human-readable message about current state
 	Message string `json:"message,omitempty"`
 
 	// Last time this status was updated
 	// +optional
 	LastUpdateTime *metav1.Time `json:"lastUpdateTime,omitempty"`
+
+	// Connection endpoints for client
+	// +optional
+	Endpoints []Endpoint `json:"endpoints,omitempty"`
+
+	// Credential
+	// +optional
+	CredentialsSecrets []CredentialSecretRef `json:"credentialsSecrets,omitempty"`
 
 	// Conditions represent the latest available observations
 	// +optional
@@ -184,6 +211,10 @@ type ClusterStatus struct {
 	// +patchMergeKey=type
 	// +patchStrategy=merge
 	Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
+
+	// Connection endpoints for client
+	// +optional
+	Endpoints []Endpoint `json:"endpoints,omitempty"`
 
 	// LastUpdateTime is the last time the status was updated
 	// +optional

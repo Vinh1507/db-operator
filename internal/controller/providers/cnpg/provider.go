@@ -7,9 +7,9 @@ import (
 
 	everestv1alpha1 "github.com/Vinh1507/db-operator/api/v1alpha1"
 	cnpgv1 "github.com/cloudnative-pg/cloudnative-pg/api/v1"
+	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -20,51 +20,42 @@ type Provider struct {
 	Scheme      *runtime.Scheme
 	Cluster     *everestv1alpha1.Cluster
 	CNPGCluster *cnpgv1.Cluster
-	EngineSpec  everestv1alpha1.EngineSpec
-
-	// Track current spec for diffing
-	currentClusterSpec cnpgv1.ClusterSpec
 }
 
-// New creates a new CNPG provider instance
 func New(
 	ctx context.Context,
 	c client.Client,
 	scheme *runtime.Scheme,
 	cluster *everestv1alpha1.Cluster,
-	engineSpec everestv1alpha1.EngineSpec,
 ) (*Provider, error) {
 	// Try to get existing CNPG cluster
 	cnpgCluster := &cnpgv1.Cluster{}
-	err := c.Get(
-		ctx,
-		types.NamespacedName{
-			Name:      engineSpec.Name,
-			Namespace: cluster.GetNamespace(),
-		},
-		cnpgCluster,
-	)
-	if err != nil && !k8serrors.IsNotFound(err) {
-		return nil, err
-	}
-
-	// Store current spec for later comparison
-	currentSpec := cnpgCluster.Spec
-
-	// Initialize with default spec if not found
-	if k8serrors.IsNotFound(err) {
-		cnpgCluster.Spec = defaultSpec()
+	for _, engine := range cluster.Spec.Engines {
+		if engine.Type == "postgresql" {
+			err := c.Get(
+				ctx,
+				types.NamespacedName{
+					Name:      engine.Name,
+					Namespace: cluster.GetNamespace(),
+				},
+				cnpgCluster,
+			)
+			if err != nil && !k8serrors.IsNotFound(err) {
+				return nil, err
+			}
+			// Initialize with default spec if not found
+			if k8serrors.IsNotFound(err) {
+				cnpgCluster.Spec = defaultSpec()
+			}
+		}
 	}
 
 	p := &Provider{
-		Client:             c,
-		Scheme:             scheme,
-		Cluster:            cluster,
-		CNPGCluster:        cnpgCluster,
-		EngineSpec:         engineSpec,
-		currentClusterSpec: currentSpec,
+		Client:      c,
+		Scheme:      scheme,
+		Cluster:     cluster,
+		CNPGCluster: cnpgCluster,
 	}
-
 	return p, nil
 }
 
@@ -79,31 +70,104 @@ func (p *Provider) Apply(ctx context.Context) Applier {
 // Status builds status information from CNPG cluster
 func (p *Provider) Status(
 	ctx context.Context,
-) (everestv1alpha1.EngineStatus, error) {
-	status := everestv1alpha1.EngineStatus{}
+) (everestv1alpha1.ClusterStatus, error) {
+
+	cluster := p.Cluster
+	clusterStatus := cluster.Status
+
 	cnpg := p.CNPGCluster
+	engineType := "postgresql"
 
-	// Map CNPG phase to our status
-	status.Name = p.CNPGCluster.Name
-	status.Type = "cnpg"
-	status.Phase = mapCNPGPhase(cnpg.Status.Phase)
-	status.Ready = int32(cnpg.Status.ReadyInstances)
-	status.Total = int32(cnpg.Spec.Instances)
-	// status.Message = strings.Join(getConditionMessages(cnpg.Status.Conditions), "; ")
-	status.Conditions = cnpg.Status.Conditions
+	credentialsSecrets := []everestv1alpha1.CredentialSecretRef{}
+	for _, credential := range cluster.Spec.Engines[0].CredentialsSecretNames {
+		credentialsSecrets = append(credentialsSecrets, everestv1alpha1.CredentialSecretRef{
+			Name:         credential,
+			RefName:      credential,
+			RefNamespace: cluster.Namespace,
+		})
+	}
+	newEngineStatus := everestv1alpha1.EngineStatus{
+		Name:               cnpg.Name,
+		Type:               engineType,
+		Phase:              mapCNPGPhase(cnpg.Status.Phase),
+		Ready:              int32(cnpg.Status.ReadyInstances),
+		Total:              int32(cnpg.Spec.Instances),
+		Conditions:         cnpg.Status.Conditions,
+		CredentialsSecrets: credentialsSecrets,
+	}
 
-	// Check if upgrade in progress
-	// if p.EngineSpec.Version != "" &&
-	// 	cnpg.Status.Image != "" &&
-	// 	!strings.Contains(cnpg.Status.Image, p.EngineSpec.Version) {
-	// 	status.Phase = "Upgrading"
+	// ---- Sync engine status ----
+	found := false
+	for i, engine := range clusterStatus.Engines {
+		if engine.Type == engineType {
+			clusterStatus.Engines[i] = newEngineStatus
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		clusterStatus.Engines = append(clusterStatus.Engines, newEngineStatus)
+	}
+
+	// ---- Calculate cluster phase ----
+	allReady := true
+	anyFailed := false
+
+	for _, engine := range clusterStatus.Engines {
+		switch engine.Phase {
+		case "Failed":
+			anyFailed = true
+			allReady = false
+		case "Ready":
+			// ok
+		default:
+			allReady = false
+		}
+	}
+
+	switch {
+	case anyFailed:
+		clusterStatus.Phase = "Failed"
+	case allReady && len(clusterStatus.Engines) == len(cluster.Spec.Engines):
+		clusterStatus.Phase = "Ready"
+	default:
+		clusterStatus.Phase = "Initializing"
+	}
+
+	// ---- Init endpoints if nil ----
+	// if clusterStatus.Endpoints == nil {
+	clusterStatus.Endpoints = []everestv1alpha1.Endpoint{}
 	// }
 
-	return status, nil
+	var svcList corev1.ServiceList
+	if err := p.Client.List(
+		ctx,
+		&svcList,
+		client.InNamespace(cluster.Namespace),
+		client.MatchingLabels{
+			"cnpg.io/cluster": cluster.Name,
+		},
+	); err != nil {
+		return clusterStatus, nil
+	}
+
+	for i := range svcList.Items {
+		svc := &svcList.Items[i]
+		if len(svc.Status.LoadBalancer.Ingress) > 0 {
+			clusterStatus.Endpoints = append(clusterStatus.Endpoints, everestv1alpha1.Endpoint{
+				Name:     svc.Name,
+				Endpoint: svc.Status.LoadBalancer.Ingress[0].IP + ":5432",
+			})
+		}
+	}
+	return clusterStatus, nil
 }
 
 // RunPreReconcileHook checks if reconciliation should proceed
-func (p *Provider) RunPreReconcileHook(ctx context.Context) (bool, time.Duration, string, error) {
+func (p *Provider) RunPreReconcileHook(ctx context.Context, cluster everestv1alpha1.Cluster) (bool, time.Duration, string, error) {
+	p.SetName(cluster.Name)
+	p.SetNamespace(cluster.Namespace)
 	// Check if restore is in progress
 	if restoring, err := p.isRestoreInProgress(ctx); err != nil {
 		return false, 0, "", err
@@ -134,7 +198,7 @@ func (p *Provider) Cleanup(ctx context.Context) (bool, error) {
 	err := p.Client.Get(
 		ctx,
 		types.NamespacedName{
-			Name:      p.EngineSpec.Name,
+			Name:      p.Cluster.GetName(),
 			Namespace: p.Cluster.GetNamespace(),
 		},
 		cnpg,
@@ -154,20 +218,15 @@ func (p *Provider) Cleanup(ctx context.Context) (bool, error) {
 	// Check if deletion completed
 	return k8serrors.IsNotFound(
 		p.Client.Get(ctx, types.NamespacedName{
-			Name:      p.EngineSpec.Name,
+			Name:      p.Cluster.GetName(),
 			Namespace: p.Cluster.GetNamespace(),
 		}, cnpg),
 	), nil
 }
 
-// DBObject returns the underlying CNPG cluster object
-func (p *Provider) DBObject() client.Object {
-	p.CNPGCluster.SetGroupVersionKind(schema.GroupVersionKind{
-		Group:   cnpgv1.SchemeGroupVersion.Group,
-		Version: cnpgv1.SchemeGroupVersion.Version,
-		Kind:    "Cluster",
-	})
-	return p.CNPGCluster
+type DBObjectWithMutate struct {
+	Object     client.Object
+	MutateFunc func() error
 }
 
 // SetName sets the name of CNPG cluster

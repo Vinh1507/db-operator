@@ -1,0 +1,8 @@
+apiVersion: dbaas.example.com/v1alpha1
+kind: ClusterBackup
+metadata:
+  name: demo-cluster-4-backup-2
+  namespace: default
+spec:
+  clusterName: demo-cluster-4
+  engineName: demo-pg-4

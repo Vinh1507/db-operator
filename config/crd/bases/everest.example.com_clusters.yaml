@@ -55,11 +55,31 @@ spec:
                       properties:
                         backupStorageName:
                           type: string
+                        backupStorages:
+                          items:
+                            description: BackupStorage references and configures a
+                              backup storage location
+                            properties:
+                              name:
+                                description: Name of the backup storage (reference
+                                  to BackupStorage CR or logical name)
+                                type: string
+                              secretRef:
+                                description: secret ref
+                                type: string
+                            required:
+                            - name
+                            type: object
+                          type: array
                         enabled:
                           type: boolean
                         schedules:
                           items:
                             properties:
+                              backupStorageName:
+                                type: string
+                              backupType:
+                                type: string
                               enabled:
                                 type: boolean
                               name:
@@ -78,8 +98,6 @@ spec:
                       required:
                       - enabled
                       type: object
-                    category:
-                      type: string
                     config:
                       properties:
                         kv:
@@ -93,8 +111,6 @@ spec:
                       items:
                         type: string
                       type: array
-                    engineType:
-                      type: string
                     expose:
                       properties:
                         enabled:
@@ -148,21 +164,25 @@ spec:
                       required:
                       - enabled
                       type: object
+                    type:
+                      type: string
                     version:
                       type: string
                   required:
-                  - category
-                  - engineType
                   - name
                   - priority
                   - replicas
+                  - type
                   - version
                   type: object
                 type: array
               paused:
                 type: boolean
+              providerType:
+                type: string
             required:
             - engines
+            - providerType
             type: object
           status:
             description: ClusterStatus defines the observed state
@@ -223,6 +243,22 @@ spec:
                   - reason
                   - status
                   - type
+                  type: object
+                type: array
+              endpoints:
+                description: Connection endpoints for client
+                items:
+                  properties:
+                    endpoint:
+                      description: Endpoint address (host:port or URL)
+                      type: string
+                    name:
+                      description: Logical name of endpoint (e.g. primary, replica,
+                        read, write)
+                      type: string
+                  required:
+                  - endpoint
+                  - name
                   type: object
                 type: array
               engines:
@@ -288,9 +324,40 @@ spec:
                         - type
                         type: object
                       type: array
-                    hostname:
-                      description: Hostname or endpoint for connection
-                      type: string
+                    credentialsSecrets:
+                      description: Credential
+                      items:
+                        properties:
+                          name:
+                            description: Name hiển thị / logical name
+                            type: string
+                          refName:
+                            description: RefName là tên Secret thực tế trong k8s
+                            type: string
+                          refNamespace:
+                            description: RefNamespace là namespace của Secret
+                            type: string
+                        required:
+                        - name
+                        - refName
+                        type: object
+                      type: array
+                    endpoints:
+                      description: Connection endpoints for client
+                      items:
+                        properties:
+                          endpoint:
+                            description: Endpoint address (host:port or URL)
+                            type: string
+                          name:
+                            description: Logical name of endpoint (e.g. primary, replica,
+                              read, write)
+                            type: string
+                        required:
+                        - endpoint
+                        - name
+                        type: object
+                      type: array
                     lastUpdateTime:
                       description: Last time this status was updated
                       format: date-time
@@ -305,10 +372,6 @@ spec:
                       description: Phase of the engine (Ready, Initializing, Failed,
                         etc.)
                       type: string
-                    port:
-                      description: Port for connection
-                      format: int32
-                      type: integer
                     ready:
                       description: Number of ready instances
                       format: int32

@@ -1,7 +1,7 @@
 apiVersion: ops.example.com/v1alpha1
 kind: OpsRequest
 metadata:
-  name: demo-cluster-4-scale-postgres-1
+  name: demo-cluster-4-scale-postgres-7
   namespace: default
 spec:
   clusterRef:
@@ -10,4 +10,4 @@ spec:
     name: demo-pg-4
   type: HorizontalScaling
   params:
-    replicas: "4"
+    replicas: "3"

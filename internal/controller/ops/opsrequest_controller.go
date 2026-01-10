@@ -7,8 +7,6 @@ import (
 
 	opsv1alpha1 "github.com/Vinh1507/db-operator/api/ops/v1alpha1"
 	everestv1alpha1 "github.com/Vinh1507/db-operator/api/v1alpha1"
-	"github.com/Vinh1507/db-operator/internal/controller/providers"
-	"github.com/Vinh1507/db-operator/internal/controller/providers/cnpg"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -113,7 +111,7 @@ func (r *OpsRequestReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		// If no engine specified, operations apply to all engines
 		// For simplicity, we'll use the first database engine
 		for i := range cluster.Spec.Engines {
-			if cluster.Spec.Engines[i].Category == everestv1alpha1.CategoryDatabase {
+			if cluster.Spec.Engines[i].Type == "postgresql" {
 				targetEngine = &cluster.Spec.Engines[i]
 				break
 			}
@@ -123,152 +121,152 @@ func (r *OpsRequestReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 				"No database engine found in cluster")
 		}
 	}
-
-	// Execute operation
-	return r.executeOperation(ctx, opsRequest, cluster, targetEngine)
-}
-
-func (r *OpsRequestReconciler) executeOperation(
-	ctx context.Context,
-	opsRequest *opsv1alpha1.OpsRequest,
-	cluster *everestv1alpha1.Cluster,
-	engine *everestv1alpha1.EngineSpec,
-) (ctrl.Result, error) {
-	logger := log.FromContext(ctx)
-
-	// // Create provider based on engine type
-	// provider, err := r.ProviderFactory.NewProvider(ctx, cluster, *engine)
-	// Create provider based on engine type
-	var provider interface {
-		Apply(ctx context.Context) cnpg.Applier
-		RunPreReconcileHook(ctx context.Context) (bool, time.Duration, string, error)
-		Status(ctx context.Context) (everestv1alpha1.EngineStatus, error)
-		DBObject() client.Object
-		SetName(string)
-		SetNamespace(string)
-	}
-	switch engine.EngineType {
-	case everestv1alpha1.EngineCNPG:
-		p, err := cnpg.New(ctx, r.Client, r.Scheme, cluster, *engine)
-		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to create CNPG provider: %w", err)
-		}
-		provider = p
-
-	// case everestv1alpha1.EnginePXC:
-	//     provider = pxc.New(...)
-	// case everestv1alpha1.EngineProxySQL:
-	//     provider = proxysql.New(...)
-
-	default:
-		return ctrl.Result{}, fmt.Errorf("unsupported engine type: %s", engine.EngineType)
-	}
-
-	// Get applier
-	applier := provider.Apply(ctx)
-
-	// Mark as processing if not already
-	if opsRequest.Status.Phase == opsv1alpha1.OpsRequestPhasePending {
-		// Validate action
-		if err := applier.ValidateAction(opsRequest.Spec.Type, opsRequest.Spec.Params); err != nil {
-			logger.Error(err, "Action validation failed")
-			return r.markAsFailed(ctx, opsRequest, "ValidationFailed", err.Error())
-		}
-
-		opsRequest.Status.Phase = opsv1alpha1.OpsRequestPhaseProcessing
-		opsRequest.Status.Message = "Starting operation"
-		opsRequest.Status.Progress = 10
-
-		meta.SetStatusCondition(&opsRequest.Status.Conditions, metav1.Condition{
-			Type:               "Processing",
-			Status:             metav1.ConditionTrue,
-			Reason:             "OperationStarted",
-			Message:            fmt.Sprintf("Started %s operation", opsRequest.Spec.Type),
-			ObservedGeneration: opsRequest.Generation,
-		})
-
-		if err := r.updateStatus(ctx, opsRequest); err != nil {
-			return ctrl.Result{}, err
-		}
-	}
-
-	// Execute action based on type
-	var result providers.ActionResult
-	var err error
-
-	switch opsRequest.Spec.Type {
-	case opsv1alpha1.ActionStart:
-		result, err = applier.Start(ctx, opsRequest.Spec.Params)
-	case opsv1alpha1.ActionStop:
-		result, err = applier.Stop(ctx, opsRequest.Spec.Params)
-	case opsv1alpha1.ActionRestart:
-		result, err = applier.Restart(ctx, opsRequest.Spec.Params)
-	case opsv1alpha1.ActionHorizontalScaling:
-		result, err = applier.HorizontalScale(ctx, opsRequest.Spec.Params)
-	case opsv1alpha1.ActionVerticalScaling:
-		result, err = applier.VerticalScale(ctx, opsRequest.Spec.Params)
-	case opsv1alpha1.ActionVolumeExpansion:
-		result, err = applier.VolumeExpansion(ctx, opsRequest.Spec.Params)
-	case opsv1alpha1.ActionReconfiguring:
-		result, err = applier.Reconfigure(ctx, opsRequest.Spec.Params)
-	case opsv1alpha1.ActionUpgrade:
-		result, err = applier.Upgrade(ctx, opsRequest.Spec.Params)
-	case opsv1alpha1.ActionBackup:
-		result, err = applier.Backup(ctx, opsRequest.Spec.Params)
-	case opsv1alpha1.ActionRestore:
-		result, err = applier.Restore(ctx, opsRequest.Spec.Params)
-	case opsv1alpha1.ActionExpose:
-		result, err = applier.ExposeService(ctx, opsRequest.Spec.Params)
-	case opsv1alpha1.ActionSwitchover:
-		result, err = applier.Switchover(ctx, opsRequest.Spec.Params)
-	case opsv1alpha1.ActionCustom:
-		result, err = applier.Custom(ctx, opsRequest.Spec.Params)
-	default:
-		return r.markAsFailed(ctx, opsRequest, "UnsupportedAction",
-			fmt.Sprintf("Action type %s is not supported", opsRequest.Spec.Type))
-	}
-
-	if err != nil {
-		logger.Error(err, "Operation execution failed")
-		return r.markAsFailed(ctx, opsRequest, "ExecutionFailed", err.Error())
-	}
-
-	// Update progress
-	opsRequest.Status.Progress = result.Progress
-	opsRequest.Status.Message = result.Message
-
-	if result.Output != nil {
-		opsRequest.Status.Output = result.Output
-	}
-
-	// Check if completed
-	if result.Completed {
-		opsRequest.Status.Phase = opsv1alpha1.OpsRequestPhaseSucceeded
-		opsRequest.Status.Progress = 100
-		opsRequest.Status.CompletionTime = &metav1.Time{Time: time.Now()}
-
-		meta.SetStatusCondition(&opsRequest.Status.Conditions, metav1.Condition{
-			Type:               "Completed",
-			Status:             metav1.ConditionTrue,
-			Reason:             "OperationSucceeded",
-			Message:            "Operation completed successfully",
-			ObservedGeneration: opsRequest.Generation,
-		})
-
-		logger.Info("Operation completed successfully")
-	}
-
-	if err := r.updateStatus(ctx, opsRequest); err != nil {
-		return ctrl.Result{}, err
-	}
-
-	// Requeue if not completed
-	if !result.Completed {
-		return ctrl.Result{RequeueAfter: result.RequeueAfter}, nil
-	}
-
 	return ctrl.Result{}, nil
+	// Execute operation
+	// return r.executeOperation(ctx, opsRequest, cluster, targetEngine)
 }
+
+// func (r *OpsRequestReconciler) executeOperation(
+// 	ctx context.Context,
+// 	opsRequest *opsv1alpha1.OpsRequest,
+// 	cluster *everestv1alpha1.Cluster,
+// 	engine *everestv1alpha1.EngineSpec,
+// ) (ctrl.Result, error) {
+// 	logger := log.FromContext(ctx)
+
+// 	// // Create provider based on engine type
+// 	// provider, err := r.ProviderFactory.NewProvider(ctx, cluster, *engine)
+// 	// Create provider based on engine type
+// 	var provider interface {
+// 		Apply(ctx context.Context) cnpg.Applier
+// 		RunPreReconcileHook(ctx context.Context) (bool, time.Duration, string, error)
+// 		Status(ctx context.Context) (everestv1alpha1.EngineStatus, error)
+// 		DBObjects() []client.Object
+// 		SetName(string)
+// 		SetNamespace(string)
+// 	}
+// 	switch engine.EngineType {
+// 	case everestv1alpha1.EngineCNPG:
+// 		p, err := cnpg.New(ctx, r.Client, r.Scheme, cluster, *engine)
+// 		if err != nil {
+// 			return ctrl.Result{}, fmt.Errorf("failed to create CNPG provider: %w", err)
+// 		}
+// 		provider = p
+
+// 	// case everestv1alpha1.EnginePXC:
+// 	//     provider = pxc.New(...)
+// 	// case everestv1alpha1.EngineProxySQL:
+// 	//     provider = proxysql.New(...)
+
+// 	default:
+// 		return ctrl.Result{}, fmt.Errorf("unsupported engine type: %s", engine.EngineType)
+// 	}
+
+// 	// Get applier
+// 	applier := provider.Apply(ctx)
+
+// 	// Mark as processing if not already
+// 	if opsRequest.Status.Phase == opsv1alpha1.OpsRequestPhasePending {
+// 		// Validate action
+// 		if err := applier.ValidateAction(opsRequest.Spec.Type, opsRequest.Spec.Params); err != nil {
+// 			logger.Error(err, "Action validation failed")
+// 			return r.markAsFailed(ctx, opsRequest, "ValidationFailed", err.Error())
+// 		}
+
+// 		opsRequest.Status.Phase = opsv1alpha1.OpsRequestPhaseProcessing
+// 		opsRequest.Status.Message = "Starting operation"
+// 		opsRequest.Status.Progress = 10
+
+// 		meta.SetStatusCondition(&opsRequest.Status.Conditions, metav1.Condition{
+// 			Type:               "Processing",
+// 			Status:             metav1.ConditionTrue,
+// 			Reason:             "OperationStarted",
+// 			Message:            fmt.Sprintf("Started %s operation", opsRequest.Spec.Type),
+// 			ObservedGeneration: opsRequest.Generation,
+// 		})
+
+// 		if err := r.updateStatus(ctx, opsRequest); err != nil {
+// 			return ctrl.Result{}, err
+// 		}
+// 	}
+
+// 	// Execute action based on type
+// 	var result providers.ActionResult
+// 	var err error
+
+// 	switch opsRequest.Spec.Type {
+// 	case opsv1alpha1.ActionStart:
+// 		result, err = applier.Start(ctx, opsRequest.Spec.Params)
+// 	case opsv1alpha1.ActionStop:
+// 		result, err = applier.Stop(ctx, opsRequest.Spec.Params)
+// 	case opsv1alpha1.ActionRestart:
+// 		result, err = applier.Restart(ctx, opsRequest.Spec.Params)
+// 	case opsv1alpha1.ActionHorizontalScaling:
+// 		result, err = applier.HorizontalScale(ctx, opsRequest.Spec.Params)
+// 	case opsv1alpha1.ActionVerticalScaling:
+// 		result, err = applier.VerticalScale(ctx, opsRequest.Spec.Params)
+// 	case opsv1alpha1.ActionVolumeExpansion:
+// 		result, err = applier.VolumeExpansion(ctx, opsRequest.Spec.Params)
+// 	case opsv1alpha1.ActionReconfiguring:
+// 		result, err = applier.Reconfigure(ctx, opsRequest.Spec.Params)
+// 	case opsv1alpha1.ActionUpgrade:
+// 		result, err = applier.Upgrade(ctx, opsRequest.Spec.Params)
+// 	case opsv1alpha1.ActionBackup:
+// 		result, err = applier.Backup(ctx, opsRequest.Spec.Params)
+// 	case opsv1alpha1.ActionRestore:
+// 		result, err = applier.Restore(ctx, opsRequest.Spec.Params)
+// 	case opsv1alpha1.ActionExpose:
+// 		result, err = applier.ExposeService(ctx, opsRequest.Spec.Params)
+// 	case opsv1alpha1.ActionSwitchover:
+// 		result, err = applier.Switchover(ctx, opsRequest.Spec.Params)
+// 	case opsv1alpha1.ActionCustom:
+// 		result, err = applier.Custom(ctx, opsRequest.Spec.Params)
+// 	default:
+// 		return r.markAsFailed(ctx, opsRequest, "UnsupportedAction",
+// 			fmt.Sprintf("Action type %s is not supported", opsRequest.Spec.Type))
+// 	}
+
+// 	if err != nil {
+// 		logger.Error(err, "Operation execution failed")
+// 		return r.markAsFailed(ctx, opsRequest, "ExecutionFailed", err.Error())
+// 	}
+
+// 	// Update progress
+// 	opsRequest.Status.Progress = result.Progress
+// 	opsRequest.Status.Message = result.Message
+
+// 	if result.Output != nil {
+// 		opsRequest.Status.Output = result.Output
+// 	}
+
+// 	// Check if completed
+// 	if result.Completed {
+// 		opsRequest.Status.Phase = opsv1alpha1.OpsRequestPhaseSucceeded
+// 		opsRequest.Status.Progress = 100
+// 		opsRequest.Status.CompletionTime = &metav1.Time{Time: time.Now()}
+
+// 		meta.SetStatusCondition(&opsRequest.Status.Conditions, metav1.Condition{
+// 			Type:               "Completed",
+// 			Status:             metav1.ConditionTrue,
+// 			Reason:             "OperationSucceeded",
+// 			Message:            "Operation completed successfully",
+// 			ObservedGeneration: opsRequest.Generation,
+// 		})
+
+// 		logger.Info("Operation completed successfully")
+// 	}
+
+// 	if err := r.updateStatus(ctx, opsRequest); err != nil {
+// 		return ctrl.Result{}, err
+// 	}
+
+// 	// Requeue if not completed
+// 	if !result.Completed {
+// 		return ctrl.Result{RequeueAfter: result.RequeueAfter}, nil
+// 	}
+
+// 	return ctrl.Result{}, nil
+// }
 
 func (r *OpsRequestReconciler) markAsFailed(
 	ctx context.Context,
