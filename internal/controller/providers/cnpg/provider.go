@@ -6,6 +6,7 @@ import (
 	"time"
 
 	everestv1alpha1 "github.com/Vinh1507/db-operator/api/v1alpha1"
+	"github.com/Vinh1507/db-operator/internal/controller/providers"
 	cnpgv1 "github.com/cloudnative-pg/cloudnative-pg/api/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -60,7 +61,7 @@ func New(
 }
 
 // Apply returns the applier for this provider
-func (p *Provider) Apply(ctx context.Context) Applier {
+func (p *Provider) Apply(ctx context.Context) providers.Applier {
 	return &applier{
 		Provider: p,
 		ctx:      ctx,
@@ -222,11 +223,6 @@ func (p *Provider) Cleanup(ctx context.Context) (bool, error) {
 			Namespace: p.Cluster.GetNamespace(),
 		}, cnpg),
 	), nil
-}
-
-type DBObjectWithMutate struct {
-	Object     client.Object
-	MutateFunc func() error
 }
 
 // SetName sets the name of CNPG cluster

@@ -22,27 +22,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
-// Applier applies configuration to CNPG cluster
-type Applier interface {
-	DBObjects(ctx context.Context, scheme *runtime.Scheme) []DBObjectWithMutate
-	SaveOpsResult() error
-	// Action methods for OpsRequest
-	ValidateAction(action opsv1alpha1.ActionType, params map[string]string) error
-	Start(ctx context.Context, params map[string]string) (providers.ActionResult, error)
-	Stop(ctx context.Context, params map[string]string) (providers.ActionResult, error)
-	Restart(ctx context.Context, params map[string]string) (providers.ActionResult, error)
-	HorizontalScale(ctx context.Context, params map[string]string) (providers.ActionResult, error)
-	VerticalScale(ctx context.Context, params map[string]string) (providers.ActionResult, error)
-	VolumeExpansion(ctx context.Context, params map[string]string) (providers.ActionResult, error)
-	Reconfigure(ctx context.Context, params map[string]string) (providers.ActionResult, error)
-	Upgrade(ctx context.Context, params map[string]string) (providers.ActionResult, error)
-	Backup(ctx context.Context, params map[string]string) (providers.ActionResult, error)
-	Restore(ctx context.Context, params map[string]string) (providers.ActionResult, error)
-	ExposeService(ctx context.Context, params map[string]string) (providers.ActionResult, error)
-	Switchover(ctx context.Context, params map[string]string) (providers.ActionResult, error)
-	Custom(ctx context.Context, params map[string]string) (providers.ActionResult, error)
-}
-
 type applier struct {
 	*Provider
 	ctx context.Context

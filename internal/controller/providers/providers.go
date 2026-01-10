@@ -5,8 +5,36 @@ import (
 	"time"
 
 	dbaasv1alpha1 "github.com/Vinh1507/db-operator/api/dbaas/v1alpha1"
+	opsv1alpha1 "github.com/Vinh1507/db-operator/api/ops/v1alpha1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+type DBObjectWithMutate struct {
+	Object     client.Object
+	MutateFunc func() error
+}
+
+// Applier applies configuration to CNPG cluster
+type Applier interface {
+	DBObjects(ctx context.Context, scheme *runtime.Scheme) []DBObjectWithMutate
+	SaveOpsResult() error
+	// Action methods for OpsRequest
+	ValidateAction(action opsv1alpha1.ActionType, params map[string]string) error
+	Start(ctx context.Context, params map[string]string) (ActionResult, error)
+	Stop(ctx context.Context, params map[string]string) (ActionResult, error)
+	Restart(ctx context.Context, params map[string]string) (ActionResult, error)
+	HorizontalScale(ctx context.Context, params map[string]string) (ActionResult, error)
+	VerticalScale(ctx context.Context, params map[string]string) (ActionResult, error)
+	VolumeExpansion(ctx context.Context, params map[string]string) (ActionResult, error)
+	Reconfigure(ctx context.Context, params map[string]string) (ActionResult, error)
+	Upgrade(ctx context.Context, params map[string]string) (ActionResult, error)
+	Backup(ctx context.Context, params map[string]string) (ActionResult, error)
+	Restore(ctx context.Context, params map[string]string) (ActionResult, error)
+	ExposeService(ctx context.Context, params map[string]string) (ActionResult, error)
+	Switchover(ctx context.Context, params map[string]string) (ActionResult, error)
+	Custom(ctx context.Context, params map[string]string) (ActionResult, error)
+}
 
 // ActionResult represents the result of an action execution
 type ActionResult struct {
